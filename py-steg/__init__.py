@@ -1,44 +1,70 @@
 from PIL import Image
-import os
+import binascii
+import fire
 
 
-def encode(image, data=-1, output_file=None):
+def encode(image, data, output_file="altered_image.png", encryption=None):
     imgdata = deconstruct(image)
-    bindata = tobinary(imgdata["pixdata"])
+    bindata = pix_tobinary(imgdata["pixdata"])
 
-    print(bindata)
+    binstr = file_tobinary(data)[2:]
+    if len(binstr) > len(bindata) * 3:
+        raise Exception("File being encoded is too large!")
 
-    imgdata["pixdata"] = frombinary(bindata)
+    binstr = binstr.zfill(len(bindata) * 3)
+
+    bindata = [
+        tuple([val[:-1] + binstr[(i * 3) + j] for j, val in enumerate(triple)])
+        for i, triple in enumerate(bindata)
+    ]
+
+    imgdata["pixdata"] = pix_frombinary(bindata)
     new_img = reconstruct(imgdata)
 
-    if output_file is None:
-        output_file = "(altered) " + image
-    new_img.save(generate_filepath(output_file))
+    if output_file.split(".")[-1] in ["jpg", "gif"]:
+        raise Exception("Do not use lossy file formats!")
+
+    new_img.save(output_file)
 
 
-# Watch out for jpeg compression issues!
-def decode(image, output_file=None):
-    pass
+def decode(image, output_file="hidden_file.txt"):
+    imgdata = deconstruct(image)
+    bindata = pix_tobinary(imgdata["pixdata"])
+
+    binstr = ""
+    for i in range(len(bindata)):
+        for j in range(3):
+            binstr += bindata[i][j][-1]
+
+    file_frombinary(binstr, output_file)
 
 
-def generate_filepath(filename):
-    __location__ = os.path.realpath(
-        os.path.join(os.getcwd(), os.path.dirname(__file__))
-    )
+def file_tobinary(filename):
+    with open(filename, "rb") as f:
+        bindata = f.read()
 
-    return os.path.join(__location__, filename)
+    hexdata = binascii.hexlify(bindata)
+    return bin(int(hexdata, 16))
 
 
-def tobinary(pixdata):
+def file_frombinary(binstr, filename):
+    hexdata = hex(int(binstr.replace("0b", ""), 2))
+    bindata = binascii.unhexlify(hexdata.strip("0x"))
+
+    with open(filename, "wb") as f:
+        f.write(bindata)
+
+
+def pix_tobinary(pixdata):
     return [tuple([bin(j) for j in triple]) for i, triple in enumerate(pixdata)]
 
 
-def frombinary(bindata):
+def pix_frombinary(bindata):
     return [tuple([int(j, 2) for j in triple]) for i, triple in enumerate(bindata)]
 
 
 def deconstruct(imgpath):
-    img = Image.open(generate_filepath(imgpath))
+    img = Image.open(imgpath)
 
     return {"pixdata": img.getdata(), "imgsize": img.size}
 
@@ -50,4 +76,5 @@ def reconstruct(imgdata):
     return img
 
 
-encode("input_img.jpg")
+if __name__ == "__main__":
+    fire.Fire({"encode": encode, "decode": decode})
